@@ -1,0 +1,6 @@
+{
+  "name": "RakshaAI",
+  "description": "Multilingual mobile safety assistant detecting AI voice scams, phishing links, and payment fraud before money is lost.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
