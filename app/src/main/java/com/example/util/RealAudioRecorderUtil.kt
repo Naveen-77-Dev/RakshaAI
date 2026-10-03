@@ -1,9 +1,12 @@
 package com.example.util
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -28,6 +31,18 @@ object RealAudioRecorderUtil {
         context: Context,
         durationSeconds: Int = 5
     ): RecordedAcousticSummary = withContext(Dispatchers.IO) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return@withContext RecordedAcousticSummary(
+                sampleDurationSec = durationSeconds,
+                peakAmplitude = 0,
+                averageAmplitude = 0.0,
+                silenceRatio = 1.0,
+                pitchVarianceFlatness = 0.0,
+                isProbableSynthetic = false,
+                recordedAudioToken = "NO_MIC_PERMISSION"
+            )
+        }
+
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
             .coerceAtLeast(4096)
 
@@ -38,15 +53,19 @@ object RealAudioRecorderUtil {
         var silentSamples = 0L
 
         try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                SAMPLE_RATE,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                bufferSize
-            )
+            audioRecord = try {
+                AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    SAMPLE_RATE,
+                    CHANNEL_CONFIG,
+                    AUDIO_FORMAT,
+                    bufferSize
+                )
+            } catch (se: SecurityException) {
+                null
+            }
 
-            if (audioRecord.state == AudioRecord.STATE_INITIALIZED) {
+            if (audioRecord != null && audioRecord.state == AudioRecord.STATE_INITIALIZED) {
                 audioRecord.startRecording()
 
                 val buffer = ShortArray(bufferSize / 2)

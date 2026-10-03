@@ -1,9 +1,16 @@
 package com.example
 
+import androidx.compose.ui.unit.dp
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,13 +31,16 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -38,6 +48,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.ui.SafetyViewModel
+import com.example.notifications.RakshaNotificationHelper
 import com.example.ui.screens.activity.ActivityLockerScreen
 import com.example.ui.screens.demo.DemoCenterScreen
 import com.example.ui.screens.family.FamilyProtectionScreen
@@ -51,19 +62,56 @@ import com.example.ui.screens.scan.QrScannerScreen
 import com.example.ui.screens.scan.ScanAnalysisScreen
 import com.example.ui.screens.scan.ScanHubSheet
 import com.example.ui.screens.settings.SettingsScreen
+import com.example.ui.screens.urlguard.UrlGuardScreen
 import com.example.ui.theme.RakshaAITheme
 
 class MainActivity : ComponentActivity() {
+    private var safetyViewModel: SafetyViewModel? = null
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        RakshaNotificationHelper.initNotificationChannels(this)
+
         setContent {
-            RakshaAITheme {
-                val viewModel: SafetyViewModel = viewModel()
+            val viewModel: SafetyViewModel = viewModel()
+            safetyViewModel = viewModel
+            val context = LocalContext.current
+
+            val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission()
+            ) { /* permission state updated */ }
+
+            LaunchedEffect(Unit) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+            }
+
+            handleIncomingIntent(intent, viewModel)
+
+            val darkThemeSetting by viewModel.isDarkTheme.collectAsState()
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val isDark = darkThemeSetting ?: systemDark
+            val activeInterceptUrl by viewModel.activeFraudInterceptUrl.collectAsState()
+            val pendingRoute by viewModel.pendingNavigationRoute.collectAsState()
+
+            RakshaAITheme(darkTheme = isDark) {
                 val navController = rememberNavController()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
+
+                LaunchedEffect(pendingRoute) {
+                    pendingRoute?.let { route ->
+                        navController.navigate(route) {
+                            launchSingleTop = true
+                        }
+                        viewModel.clearPendingNavigation()
+                    }
+                }
 
                 var showScanHubSheet by remember { mutableStateOf(false) }
 
@@ -74,7 +122,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     bottomBar = {
                         if (showBottomNav) {
-                            NavigationBar {
+                            NavigationBar(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 3.dp
+                            ) {
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                                     label = { Text("Home") },
@@ -255,9 +306,58 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToMessage = { navController.navigate("message_analysis") }
                             )
                         }
+
+                        // Real-Time In-App Fraud URL Intercept Modal Shield
+                        if (activeInterceptUrl != null) {
+                            androidx.compose.ui.window.Dialog(
+                                onDismissRequest = { viewModel.dismissUrlIntercept() },
+                                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                            ) {
+                                UrlGuardScreen(
+                                    urlToInspect = activeInterceptUrl ?: "",
+                                    onClose = { viewModel.dismissUrlIntercept() },
+                                    onOpenExternalBrowser = { urlToOpen ->
+                                        viewModel.dismissUrlIntercept()
+                                        val browserIntent = android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse(urlToOpen)
+                                        ).apply {
+                                            addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                                            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        try {
+                                            startActivity(browserIntent)
+                                        } catch (_: Exception) {}
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        safetyViewModel?.let { handleIncomingIntent(intent, it) }
+    }
+
+    private fun handleIncomingIntent(intent: android.content.Intent?, viewModel: SafetyViewModel) {
+        if (intent == null) return
+        val navRoute = intent.getStringExtra("EXTRA_NAV_ROUTE")
+        val analysisType = intent.getStringExtra("EXTRA_ANALYSIS_TYPE")
+        val payload = intent.getStringExtra("EXTRA_PAYLOAD")
+
+        if (analysisType == "MESSAGE" && !payload.isNullOrBlank()) {
+            viewModel.startMessageAnalysis(payload)
+            viewModel.setPendingNavigation("scan_analysis")
+        } else if (analysisType == "URL" && !payload.isNullOrBlank()) {
+            viewModel.triggerUrlIntercept(payload)
+            viewModel.setPendingNavigation("scan_analysis")
+        } else if (!navRoute.isNullOrBlank()) {
+            viewModel.setPendingNavigation(navRoute)
         }
     }
 }

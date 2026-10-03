@@ -103,4 +103,37 @@ class RakshaRiskEngineTest {
         assertEquals(RiskLevel.CRITICAL, assessment.riskLevel)
         assertTrue("Must recommend cooldown pause", assessment.recommendedActions.any { it.contains("PAUSE") })
     }
+
+    @Test
+    fun testScamSmsWithPhishingLinkForensics() {
+        val scamSms = "ALERT: Dear Customer, your SBI account is blocked. Update PAN immediately at https://sbi-yono-update-pan.cc/verify"
+        val assessment = MessageAnalyzer.analyze(scamSms)
+        assertTrue("Scam SMS should trigger risk score >= 50", assessment.riskScore >= 50)
+        assertTrue(assessment.riskLevel != RiskLevel.SAFE)
+
+        val urlAssessment = UrlAnalyzer.analyze("https://sbi-yono-update-pan.cc/verify")
+        assertTrue("Phishing URL must score >= 70", urlAssessment.riskScore >= 70)
+        assertEquals(RiskLevel.CRITICAL, urlAssessment.riskLevel)
+        assertTrue(urlAssessment.signals.any { it.name.contains("Impersonation") })
+    }
+
+    @Test
+    fun testRcsWorkFromHomeScamDetection() {
+        val rcsMessage = "[RCS Business Chat] Congratulations! You are shortlisted for Part-Time Review Work. Earn ₹4,500/day. Deposit initial registration ₹1,500 via UPI or register at https://task-earnings-telegram.vip/bonus"
+        val assessment = MessageAnalyzer.analyze(rcsMessage)
+
+        assertTrue("RCS job scam should score >= 50", assessment.riskScore >= 50)
+        assertTrue(assessment.riskLevel != RiskLevel.SAFE)
+        assertTrue(assessment.scamCategory == ScamCategory.JOB_SCAM || assessment.scamCategory == ScamCategory.PHISHING || assessment.signals.isNotEmpty())
+    }
+
+    @Test
+    fun testSimToSimElectricityCutoffExtortion() {
+        val simMessage = "URGENT ELECTRICITY ALERT: Your power will be disconnected at 9:30 PM tonight due to pending bill update. Immediately call electricity officer at 9845011223 or settle bill at https://discom-bill-pay.xyz/urgent"
+        val assessment = MessageAnalyzer.analyze(simMessage)
+
+        assertTrue("Extortion message should score >= 50", assessment.riskScore >= 50)
+        assertTrue(assessment.riskLevel != RiskLevel.SAFE)
+        assertTrue(assessment.signals.any { it.name.contains("Urgency") || it.name.contains("Utility") || it.name.contains("Authority") })
+    }
 }

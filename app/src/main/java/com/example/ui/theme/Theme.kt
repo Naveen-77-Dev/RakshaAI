@@ -13,48 +13,56 @@ import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
     primary = RakshaTealLight,
-    onPrimary = Color.Black,
+    onPrimary = Color(0xFF0F172A),
     primaryContainer = RakshaNavyLight,
-    onPrimaryContainer = RakshaTealLight,
+    onPrimaryContainer = Color(0xFFE2F1F8),
     secondary = Color(0xFF60A5FA),
-    onSecondary = Color.Black,
+    onSecondary = Color(0xFF0F172A),
+    secondaryContainer = Color(0xFF1E3A8A),
+    onSecondaryContainer = Color(0xFFDBEAFE),
     tertiary = Color(0xFFFBBF24),
     background = SurfaceDark,
-    surface = SurfaceDark,
-    surfaceVariant = SurfaceContainerDark,
+    surface = SurfaceContainerDark,
+    surfaceVariant = SurfaceVariantDark,
     onBackground = TextPrimaryDark,
     onSurface = TextPrimaryDark,
     onSurfaceVariant = TextSecondaryDark,
+    outline = BorderSubtleDark,
+    outlineVariant = Color(0xFF263750),
     error = RiskCriticalRed,
-    errorContainer = RiskCriticalContainer,
-    onError = Color.White
+    errorContainer = Color(0xFF7F1D1D),
+    onError = Color.White,
+    onErrorContainer = Color(0xFFFEE2E2)
 )
 
 private val LightColorScheme = lightColorScheme(
     primary = RakshaTeal,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFCCFBF1),
-    onPrimaryContainer = Color(0xFF115E59),
+    primaryContainer = Color(0xFFE0F2FE),
+    onPrimaryContainer = Color(0xFF0369A1),
     secondary = RakshaSapphire,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFDBEAFE),
+    secondaryContainer = Color(0xFFEFF6FF),
     onSecondaryContainer = RakshaSapphireDark,
     tertiary = RiskCautionAmber,
     background = SurfaceLight,
     surface = SurfaceContainerLight,
-    surfaceVariant = Color(0xFFF1F5F9),
+    surfaceVariant = SurfaceVariantLight,
     onBackground = TextPrimaryLight,
     onSurface = TextPrimaryLight,
     onSurfaceVariant = TextSecondaryLight,
+    outline = BorderSubtleLight,
+    outlineVariant = Color(0xFFE2E8F0),
     error = RiskCriticalRed,
     errorContainer = RiskCriticalContainer,
-    onError = Color.White
+    onError = Color.White,
+    onErrorContainer = Color(0xFF991B1B)
 )
 
 @Composable
 fun RakshaAITheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Use our tuned cyber trust palette
+    dynamicColor: Boolean = false, // Curated cyber trust & clean styling
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

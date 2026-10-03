@@ -128,9 +128,10 @@ fun ScanHubSheet(
                     val trimmed = universalInput.trim()
                     if (trimmed.isNotEmpty()) {
                         onDismiss()
-                        if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.contains(".com") || trimmed.contains(".cc") || trimmed.contains(".xyz")) {
+                        val isPureUrl = (trimmed.startsWith("http://") || trimmed.startsWith("https://")) && !trimmed.contains(" ")
+                        if (isPureUrl) {
                             viewModel.startUrlAnalysis(trimmed)
-                        } else if (trimmed.startsWith("upi://") || trimmed.contains("@ok") || trimmed.contains("@icici")) {
+                        } else if (trimmed.startsWith("upi://") || ((trimmed.contains("@ok") || trimmed.contains("@icici") || trimmed.contains("@upi")) && !trimmed.contains(" "))) {
                             viewModel.startQrAnalysis(trimmed)
                         } else {
                             viewModel.startMessageAnalysis(trimmed)

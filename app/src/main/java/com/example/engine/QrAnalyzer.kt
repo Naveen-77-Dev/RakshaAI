@@ -89,7 +89,7 @@ object QrAnalyzer {
                 score += 65
                 signals.add(
                     RiskSignal(
-                        name = "Scam Deception Signature (${matches.joinToString(", ")})",
+                        name = "UPI Payment Debit Trigger: Scam Deception (${matches.joinToString(", ")})",
                         severity = SignalSeverity.HIGH,
                         explanation = "DANGEROUS SCAM TRIGGER: Scammers send payment QR codes pretending you will receive a refund or cashback. Approving this will DEBIT your account."
                     )

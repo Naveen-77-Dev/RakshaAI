@@ -213,18 +213,18 @@ private fun Step1Welcome() {
     Spacer(modifier = Modifier.height(24.dp))
     Box(
         modifier = Modifier
-            .size(110.dp)
-            .clip(CircleShape)
+            .size(130.dp)
+            .clip(RoundedCornerShape(24.dp))
             .background(
-                Brush.linearGradient(listOf(RakshaNavy, RakshaSapphire, RakshaTeal))
+                Brush.linearGradient(listOf(RakshaNavy, Color(0xFF060A17)))
             )
-            .border(2.dp, RakshaTeal, CircleShape),
+            .border(2.dp, RakshaTeal.copy(alpha = 0.6f), RoundedCornerShape(24.dp)),
         contentAlignment = Alignment.Center
     ) {
         Image(
             painter = painterResource(id = R.drawable.raksha_logo),
             contentDescription = "RakshaAI Logo",
-            modifier = Modifier.size(80.dp)
+            modifier = Modifier.size(120.dp)
         )
     }
 

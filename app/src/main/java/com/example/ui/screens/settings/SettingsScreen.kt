@@ -16,7 +16,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
@@ -62,6 +64,7 @@ fun SettingsScreen(
     val currentLang by viewModel.currentLanguage.collectAsState()
     val protectionMode by viewModel.protectionMode.collectAsState()
     val events by viewModel.allEvents.collectAsState()
+    val isDarkThemePref by viewModel.isDarkTheme.collectAsState()
     val isElderly = viewModel.isElderlyMode()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -148,17 +151,87 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // App Appearance & Theme
+            Text("Appearance & Theme", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Light Theme (Sun)
+                FilterChip(
+                    modifier = Modifier.weight(1f),
+                    selected = isDarkThemePref == false,
+                    onClick = { viewModel.setDarkTheme(false) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.LightMode,
+                            contentDescription = "Light Theme",
+                            modifier = Modifier.size(18.dp),
+                            tint = if (isDarkThemePref == false) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    label = { Text("Light (Sun)") }
+                )
+
+                // Dark Theme (Moon)
+                FilterChip(
+                    modifier = Modifier.weight(1f),
+                    selected = isDarkThemePref == true,
+                    onClick = { viewModel.setDarkTheme(true) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.DarkMode,
+                            contentDescription = "Dark Theme",
+                            modifier = Modifier.size(18.dp),
+                            tint = if (isDarkThemePref == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    label = { Text("Dark (Moon)") }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // Language Switcher
             Text("Interface Language", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AppLanguage.entries.forEach { lang ->
-                    FilterChip(
-                        selected = currentLang == lang,
-                        onClick = { viewModel.setLanguage(lang) },
-                        label = { Text("${lang.nativeName} (${lang.displayName})") }
-                    )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppLanguage.entries.take(2).forEach { lang ->
+                        FilterChip(
+                            modifier = Modifier.weight(1f),
+                            selected = currentLang == lang,
+                            onClick = { viewModel.setLanguage(lang) },
+                            leadingIcon = {
+                                Text(
+                                    lang.scriptSymbol,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (currentLang == lang) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            label = { Text("${lang.nativeName} (${lang.displayName})") }
+                        )
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppLanguage.entries.drop(2).forEach { lang ->
+                        FilterChip(
+                            modifier = Modifier.weight(1f),
+                            selected = currentLang == lang,
+                            onClick = { viewModel.setLanguage(lang) },
+                            leadingIcon = {
+                                Text(
+                                    lang.scriptSymbol,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (currentLang == lang) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            label = { Text("${lang.nativeName} (${lang.displayName})") }
+                        )
+                    }
                 }
             }
 

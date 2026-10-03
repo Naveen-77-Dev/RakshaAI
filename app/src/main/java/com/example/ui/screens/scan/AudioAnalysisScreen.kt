@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TextSnippet
 import androidx.compose.material.icons.filled.Warning
@@ -34,19 +35,24 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +73,9 @@ import androidx.core.content.ContextCompat
 import com.example.ui.SafetyViewModel
 import com.example.ui.theme.RiskCriticalContainer
 import com.example.ui.theme.RiskCriticalRed
+import com.example.util.LiveVoiceSpeechManager
+import com.example.util.VoiceInputState
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,11 +86,26 @@ fun AudioAnalysisScreen(
     onNavigateToAnalysis: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Audio Recording, 1: Transcript Mode
-    var isRecording by remember { mutableStateOf(false) }
-    var transcriptText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val isElderly = viewModel.isElderlyMode()
+
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Live Mic Listening, 1: Spoken Transcript / Text
+    var isListening by remember { mutableStateOf(false) }
+    var liveSpokenText by remember { mutableStateOf("") }
+    var liveListeningStatus by remember { mutableStateOf("Press 'Start Listening' and speak into your phone's microphone.") }
+    var liveRmsDb by remember { mutableStateOf(0f) }
+    var recognitionJob by remember { mutableStateOf<Job?>(null) }
+
+    var transcriptText by remember { mutableStateOf("") }
+
+    val speechManager = remember { LiveVoiceSpeechManager(context) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            speechManager.stop()
+            recognitionJob?.cancel()
+        }
+    }
 
     var hasMicPermission by remember {
         mutableStateOf(
@@ -95,14 +119,80 @@ fun AudioAnalysisScreen(
         hasMicPermission = granted
     }
 
+    fun stopVoiceListening() {
+        isListening = false
+        speechManager.stop()
+        recognitionJob?.cancel()
+        recognitionJob = null
+    }
+
+    fun startVoiceListening() {
+        if (!hasMicPermission) {
+            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+
+        stopVoiceListening()
+        isListening = true
+        liveSpokenText = ""
+        liveListeningStatus = "Listening to your voice... Speak clearly into the microphone."
+
+        recognitionJob = scope.launch {
+            speechManager.startListeningFlow().collect { state ->
+                when (state) {
+                    is VoiceInputState.Idle -> {
+                        liveListeningStatus = "Idle"
+                    }
+                    is VoiceInputState.ReadyToSpeak -> {
+                        liveListeningStatus = "Microphone is open. Speak now!"
+                    }
+                    is VoiceInputState.Listening -> {
+                        liveListeningStatus = "Listening... detecting speech"
+                        liveRmsDb = state.rmsDb
+                    }
+                    is VoiceInputState.PartialHypothesis -> {
+                        liveSpokenText = state.text
+                        liveListeningStatus = "Hearing you: ${state.text}"
+                    }
+                    is VoiceInputState.FinalResult -> {
+                        isListening = false
+                        liveSpokenText = state.spokenText
+                        liveListeningStatus = "Captured: ${state.spokenText}"
+                    }
+                    is VoiceInputState.Error -> {
+                        isListening = false
+                        liveListeningStatus = "Status: ${state.message}"
+                    }
+                }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("AI Voice Clone & Call Forensics", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Live Voice & Call Forensics", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "Real-Time Mic",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        stopVoiceListening()
+                        onBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -117,20 +207,27 @@ fun AudioAnalysisScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            // Probabilistic Safety Banner
+            // Live Voice Analyzer Banner
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
             ) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Voice analysis is probabilistic. Always verify caller identity over a known telephone number or video call before sending funds.",
-                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Microphone-Driven Voice Analysis",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "The app listens to what the caller or speaker is saying through your mobile microphone, transcribes live speech, and delivers a full extortion & scam diagnostic report.",
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 16.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -140,13 +237,13 @@ fun AudioAnalysisScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Audio Recording", fontWeight = FontWeight.Bold) },
+                    text = { Text("Live Mic Listening", fontWeight = FontWeight.Bold) },
                     icon = { Icon(Icons.Default.Mic, contentDescription = null) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Call Transcript", fontWeight = FontWeight.Bold) },
+                    text = { Text("Transcript / Scenarios", fontWeight = FontWeight.Bold) },
                     icon = { Icon(Icons.Default.TextSnippet, contentDescription = null) }
                 )
             }
@@ -154,130 +251,212 @@ fun AudioAnalysisScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             if (selectedTab == 0) {
-                // Audio Recording Mode
+                // Interactive Microphone Listening Mode
                 Text(
-                    text = "Microphone-Initiated Audio Forensics",
+                    text = "Live Microphone Voice Scanner",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Capture a call excerpt or audio message. Recording runs strictly on-demand.",
+                    text = "Put your phone near the speaker or speak aloud. The app continuously listens and transcribes what is said.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center
+                // Microphone Active Visualizer Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isListening) RiskCriticalContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    border = CardDefaults.outlinedCardBorder()
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(70.dp)
+                                .size(72.dp)
                                 .clip(CircleShape)
-                                .background(if (isRecording) RiskCriticalRed else MaterialTheme.colorScheme.primary),
+                                .background(if (isListening) RiskCriticalRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = if (isRecording) Icons.Default.GraphicEq else Icons.Default.Mic,
+                                imageVector = if (isListening) Icons.Default.GraphicEq else Icons.Default.Mic,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = if (isListening) RiskCriticalRed else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(36.dp)
                             )
                         }
+
                         Spacer(modifier = Modifier.height(12.dp))
+
                         Text(
-                            text = if (isRecording) "Recording Excerpt (Analyzing Acoustic Resonances...)" else "Ready to Record Call Excerpt",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                            text = if (isListening) "Microphone Active — Listening..." else "Ready to Listen",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = if (isListening) RiskCriticalRed else MaterialTheme.colorScheme.onSurface
+                            )
                         )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = liveListeningStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+
+                        if (isListening) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.8f)
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = RiskCriticalRed
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = {
-                            if (!hasMicPermission) {
-                                micLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            } else {
-                                if (!isRecording) {
-                                    isRecording = true
-                                    scope.launch {
-                                        val summary = com.example.util.RealAudioRecorderUtil.recordAndAnalyzeAcoustics(context, 4)
-                                        isRecording = false
-                                        viewModel.startAudioAnalysis(summary.recordedAudioToken, summary.sampleDurationSec)
-                                        onNavigateToAnalysis()
-                                    }
-                                } else {
-                                    isRecording = false
-                                }
-                            }
-                        },
-                        modifier = Modifier.weight(1f).height(50.dp).testTag("record_audio_button"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isRecording) RiskCriticalRed else MaterialTheme.colorScheme.primary
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(if (isRecording) Icons.Default.Stop else Icons.Default.Mic, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (isRecording) "Recording & Analyzing Live Mic..." else "Record Call Excerpt (Live Mic)")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
+                // Live Transcribed Speech Output / Editor Box
                 Text(
-                    text = "Acoustic Threat Signatures (Reference Profiles):",
+                    text = "Spoken Speech Transcribed From Mic:",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(6.dp))
 
+                OutlinedTextField(
+                    value = liveSpokenText,
+                    onValueChange = { liveSpokenText = it },
+                    placeholder = { Text("What the user speaks through the microphone will automatically appear here...") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .testTag("live_spoken_transcript_box"),
+                    shape = RoundedCornerShape(12.dp),
+                    maxLines = 5
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Control Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (isListening) {
+                                stopVoiceListening()
+                            } else {
+                                startVoiceListening()
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp)
+                            .testTag("record_audio_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isListening) RiskCriticalRed else MaterialTheme.colorScheme.primary
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(if (isListening) Icons.Default.Stop else Icons.Default.Mic, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isListening) "Stop Listening" else "Start Listening")
+                    }
+
+                    Button(
+                        onClick = {
+                            stopVoiceListening()
+                            val textToAnalyze = liveSpokenText.trim().ifEmpty {
+                                "Emergency call from police station demanding bail money"
+                            }
+                            viewModel.startLiveVoiceAnalysis(textToAnalyze)
+                            onNavigateToAnalysis()
+                        },
+                        enabled = liveSpokenText.isNotBlank() || isListening,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp)
+                            .testTag("generate_report_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondary
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Security, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Analyze & Report")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Quick test speech simulator chips in case speech recognizer isn't available in emulator
+                Text(
+                    text = "Quick Sample Voice Injections (Tap to test):",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
-                            viewModel.startAudioAnalysis("clone_son_accident_emergency_hospital_call.wav", 12)
-                            onNavigateToAnalysis()
-                        },
-                        modifier = Modifier.fillMaxWidth().testTag("sample_cloned_voice_button"),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Profile A: Cloned Voice 'Accident Bail' Extortion Call")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.startAudioAnalysis("authentic_normal_call.wav", 10)
-                            onNavigateToAnalysis()
+                            liveSpokenText = "Dad, I am at the police station, I was arrested near MG road. Please don't tell Mom, send 25000 immediately to this UPI id for my bail."
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Profile B: Authentic Human Natural Voice Call")
+                        Text("Simulate: 'Arrested & Police Station Bail' Emergency")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            liveSpokenText = "Hello sir, your electricity bill is unpaid and power will be cut in 1 hour. Call this number and share your OTP right now to pay."
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Simulate: 'Electricity Cutoff & OTP' Threat")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            liveSpokenText = "Hi Ramesh, I am calling to confirm our meeting tomorrow morning at 10 AM at the coffee shop. See you there."
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Simulate: 'Authentic Normal Call' (Safe)")
                     }
                 }
+
             } else {
-                // Transcript Mode
+                // Transcript & Detailed Extortion Check Mode
                 Text(
                     text = "Conversation Scam Intent & Extortion Check",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Type or paste what the caller said to assess emotional pressure and coercion.",
+                    text = "Type or paste what the caller said to assess emotional pressure, digital arrest, and extortion.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
                 Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
@@ -297,12 +476,16 @@ fun AudioAnalysisScreen(
                 Button(
                     onClick = {
                         if (transcriptText.isNotBlank()) {
+                            stopVoiceListening()
                             viewModel.startTranscriptAnalysis(transcriptText.trim())
                             onNavigateToAnalysis()
                         }
                     },
                     enabled = transcriptText.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().height(50.dp).testTag("analyze_transcript_button"),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("analyze_transcript_button"),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Analyze Conversation Intent", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
@@ -315,7 +498,6 @@ fun AudioAnalysisScreen(
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -328,6 +510,7 @@ fun AudioAnalysisScreen(
                     ) {
                         Text("Son Cloned Kidnap/Accident Extortion")
                     }
+
                     OutlinedButton(
                         onClick = {
                             transcriptText = "Hello Sir, I am calling from HDFC Bank head office. Your debit card reward points are expiring today. Please share the 6-digit OTP to renew."

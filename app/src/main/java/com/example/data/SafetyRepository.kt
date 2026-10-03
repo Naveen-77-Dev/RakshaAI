@@ -232,4 +232,16 @@ class SafetyRepository(private val db: AppDatabase) {
         root.put("disclaimer", "Preserved locally on user device. No remote raw recordings stored without consent.")
         return root.toString(2)
     }
+
+    companion object {
+        @Volatile
+        private var INSTANCE: SafetyRepository? = null
+
+        fun getInstance(context: Context): SafetyRepository {
+            return INSTANCE ?: synchronized(this) {
+                val db = AppDatabase.getInstance(context)
+                SafetyRepository(db).also { INSTANCE = it }
+            }
+        }
+    }
 }
